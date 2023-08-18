@@ -3,6 +3,8 @@ module ViscousFlow
 #using DocStringExtensions
 using Reexport
 using UnPack
+using Statistics # do we need this???
+using LinearAlgebra # also do we need this??
 @reexport using ImmersedLayers
 @reexport using GridUtilities
 
@@ -664,7 +666,7 @@ convective_acceleration(w::Nodes{Dual},τ,sys::ILMSystem,t) = convective_acceler
 
 @snapshotoutput convective_acceleration
 
-
+# Calculate Q-criterion
 function Qcrit!(Q::Nodes{Primal},w::Nodes{Dual},τ,sys::ILMSystem,t)
     vel = zeros_grid(sys)
     velocity!(vel,w,sys,t)
@@ -682,6 +684,48 @@ end
 Qcrit(w::Nodes{Dual},τ,sys::ILMSystem,t) = Qcrit!(zeros_griddiv(sys),w,τ,sys,t)
 
 @snapshotoutput Qcrit
+
+# calculate POD modes for VELOCITY (functionality may be expanded later)
+function PODModes!(sol, sys::ILMSystem)
+    # define matrix X (snapshot collection) of flowfield using sys and length of solution
+    # X = zeros(size(zeros_grid(sys))[1], length(sol.t))
+
+    # temporal average of vorticity field
+
+    vhist = [zeros_grid(sys) for i in 1:length(sol.t)]
+
+    U_mean = zeros_grid(sys)
+    for (i,tstep) in enumerate(sol.t)
+        velocity!(vhist[i],state(sol.u[i]),sys,tstep)
+       U_mean .+= vhist[i]
+    end
+    U_mean ./= length(sol.t)
+    vhist .-= U_mean
+
+    XTX = zeros(length(sol.t), length(sol.t)) # only need mxm
+
+    # determine mean of each u or v all-snapshot array before dot prods
+    
+    for (i,tstep) in enumerate(sol.t)
+        # step 1: vertically concatenate all velocity components for one snapshot
+        # step 2: horizontally concatenate all snapshots through [:,i]
+        X[:,i] = vcat(velocity(sol,sys,tstep)...)
+    end
+
+    # nested for loops to dot product u_i and u_j for snapshots i and j
+
+    # determine mean(X rows) of all snapshots and subtract from X
+    Xmean = mean(X,dims=2)
+    X = X - Xmean
+
+    # calculate svd(X) and return POD modes from there
+    Phi, sigma, Psi_T = svd(X)
+    # should we use POD (snapshot) method instead for faster calcs?
+
+    # convert Phi back into grid orientation, do we need to append modes to sol for this to work?
+    u_POD = zeros_grid(sys)
+    v_POD = zeros_grid(sys)
+end
 
 #= Surface fields =#
 
